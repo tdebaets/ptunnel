@@ -5,7 +5,7 @@ Created on Dec 25, 2010
 @author: ivan
 '''
 
-import SocketServer
+import socketserver
 import socket
 import optparse
 import logging
@@ -14,7 +14,7 @@ log=logging.root
 import sys
 import threading
 import os
-import urlparse
+import urllib.parse
 
 REMOTE_TIMEOUT_CONNECT=10
 REMOTE_TIMEOUT_RECEIVE=None
@@ -47,7 +47,7 @@ def _parse_args(args):
 def _system_proxy_url():
     proxy=os.environ.get('http_proxy')
     if proxy:
-        return urlparse.urlparse(proxy).netloc
+        return urllib.parse.urlparse(proxy).netloc
         
         
         
@@ -70,17 +70,17 @@ def _parse_options(oparser, args):
     return opts, args
 
 servers=[]
-class TunnelServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+class TunnelServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     def __init__(self, tunnel, proxy, direct):
         self.tunnel=tunnel
         self.proxy=proxy
         self.direct_as_fallback=direct
-        SocketServer.TCPServer.__init__(self,('localhost', tunnel[0]),Tunnel)
+        socketserver.TCPServer.__init__(self,('localhost', tunnel[0]),Tunnel)
         
 class BackForwarder(threading.Thread): 
     def __init__(self, remote_socket, server_socket, closed_callback=None):
         super(BackForwarder, self).__init__()
-        self.setDaemon(True)
+        self.daemon=True
         self.remote_socket=remote_socket
         self.server_socket=server_socket
         self.closed_callback=closed_callback
@@ -93,14 +93,14 @@ class BackForwarder(threading.Thread):
                 data = self.remote_socket.recv( 1024 )
                 if not data: break
                 self.server_socket.send( data )
-            except Exception, e:
+            except Exception as e:
                 log.debug("Remote Connection closed (%s, %s)"% (str(type(e)), str(e)))
                 break
         log.info("connection to %s closed" % str(self.remote_socket))
         if self.closed_callback:
             self.closed_callback()
            
-class Tunnel(SocketServer.BaseRequestHandler):
+class Tunnel(socketserver.BaseRequestHandler):
     def connect_remote(self):
         self.remote_socket=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.remote_socket.settimeout(REMOTE_TIMEOUT_CONNECT)
@@ -110,11 +110,12 @@ class Tunnel(SocketServer.BaseRequestHandler):
     CONNECT = "CONNECT %s:%d HTTP/1.0\r\n\r\n"    
     def connect_remote_via_proxy(self):
         sock = socket.create_connection(self.server.proxy)
-        sock.sendall(Tunnel.CONNECT % tuple(self.server.tunnel[1:]))
+        message = Tunnel.CONNECT % tuple(self.server.tunnel[1:]);
+        sock.sendall(message.encode())
         s = ""
         while s[-4:] != "\r\n\r\n":
-            s += sock.recv(1)
-        print repr(s)
+            s += sock.recv(1).decode()
+        print(repr(s))
         self.remote_socket=sock
         self.remote_disconnected=False
         
@@ -129,7 +130,7 @@ class Tunnel(SocketServer.BaseRequestHandler):
         try:
             try:
                 self.connect_remote_via_proxy()
-            except IOError, e:
+            except IOError as e:
                 log.warning("Connection to proxy failed with %s" % str(e))
                 if self.server.direct_as_fallback:
                     self.connect_remote()
@@ -148,7 +149,7 @@ class Tunnel(SocketServer.BaseRequestHandler):
                 self.remote_socket.send( data )
             except socket.timeout:
                 pass
-            except Exception, e:
+            except Exception as e:
                 log.info("Local Connection closed by server (%s, %s)"% (str(type(e)), str(e)))
                 break
         self.remote_socket.close()
