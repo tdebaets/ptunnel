@@ -114,7 +114,10 @@ class Tunnel(socketserver.BaseRequestHandler):
         sock.sendall(message.encode())
         s = ""
         while s[-4:] != "\r\n\r\n":
-            s += sock.recv(1).decode()
+            data = sock.recv(1)
+            if not data:
+                raise ConnectionError("Proxy closed connection before completing HTTP headers")
+            s += data.decode()
         print(repr(s))
         self.remote_socket=sock
         self.remote_disconnected=False
